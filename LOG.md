@@ -207,10 +207,121 @@ The 5-qubit system, single-site X,Y controls on every qubit, bounded
   pentagon (8+ qubits) will need a different parameterization or a
   proper spline integrator (currently Piccolissimo-only).
 
-## M5 — Objective-driven synthesis (next)
+## M5 — Objective-driven synthesis (Layers 1+2 done, Layer 3 designed)
 
 The novel research contribution: instead of targeting a fixed `V_target`,
 optimize over isometries `V` to minimize `Σ_A w_A · petz_recovery_error(V, A)`
-under bounded controls. Now unblocked by the M4 escape — the same
-problem builder + drift + drives that worked for M4 will be the starting
-point.
+under bounded controls.
+
+Built in three layers so the metric, the optimization concept, and the
+Piccolo integration are validated separately.
+
+### Layer 1 — the metric
+
+`petz_recovery_objective(V; A_list, weights, cutoff)` in `src/recovery.jl`
+aggregates Petz recovery errors over weighted subregions. Verified in
+`examples/05a_petz_objective_demo.jl` on `(n_bdy=3, n_bulk=1)`:
+
+| isometry                         | objective |
+|----------------------------------|-----------|
+| 3-qubit repetition code          | 0.500     |
+| trivial \|q,0,0⟩ embedding       | 0.250     |
+| random isometry (seed=42)        | 0.165     |
+| \|0⟩=\|000⟩, \|1⟩=\|W⟩           | 0.271     |
+
+The repetition code's 0.5 is the dephasing-channel signature — repetition
+preserves the classical bit but not the phase, so the Petz objective
+correctly classifies it as a *classical* code, not a quantum one. The
+random isometry actually beats repetition here, which is informative:
+the discovery objective rewards even spreading of information.
+
+### Layer 2 — standalone optimization
+
+`examples/05b_petz_optimization_demo.jl` runs random restart + greedy
+coordinate descent over the polar parameterization of V (no Piccolo).
+On `(n_bdy=3, n_bulk=1)`:
+- 300 random restarts → best objective 0.117
+- Coordinate descent → 0.0670
+- All three per-erasure errors converged to the same value (symmetric
+  across qubit permutations).
+- Beats every hand-coded baseline by 2.47× — smallest demonstration of
+  the M5 contribution: *a code discovered by optimizing recovery
+  directly, outperforming any analytic encoder we tried*.
+
+`examples/05c_petz_optimization_n5.jl` extends to `(n_bdy=5, n_bulk=1)`:
+
+| configuration | Petz objective | fid to V_513 |
+|---|---|---|
+| analytic [[5,1,3]] | 4.0e-16 | 1.000 |
+| random isometry (seed=42) | 3.4e-2 | (irrelevant) |
+| **cold random restart + descent** | **4.8e-7** | **0.0003** |
+| warm-start from V_513+noise + descent | 4.3e-8 | 0.7349 |
+
+**The manifold observation.** Both descent paths found codes with
+essentially-zero Petz recovery error, but **neither is V_513**. The cold-
+descent V_opt has subspace fidelity *0.0003* to V_513 (essentially
+orthogonal in code-space) yet objective 5e-7. The warm-start V_opt has
+fidelity 0.735 to V_513 yet objective 4e-8.
+
+The set of codes with low Petz error is a **manifold**, not a point.
+For d_bulk=2, the Grassmannian Gr(2, 32) is 120-real-dimensional; the
+low-Petz subvariety is evidently large. Different optimization paths
+descend to different members of the same equivalence class.
+
+This is excellent news for the Piccolo M5 path: **the optimizer doesn't
+need to find V_513 specifically — it just needs to find any point on
+the low-Petz-error manifold**, which is a much easier problem than
+fixed-target synthesis. From cold start, coordinate descent finds the
+manifold in ~94 s of compute.
+
+### Layer 2 bonus — the M3 → M5 link
+
+`examples/05d_m3_vs_m5_link.jl` exercises the cross-layer plumbing
+(Piccolo + Petz objective evaluation) without needing the custom
+objective infrastructure of Layer 3. Run on `(n_bdy=3, n_bulk=1)`:
+
+| encoder | Petz obj | fid to rep |
+|---|---|---|
+| analytic 3Q repetition (M3 target) | 0.5000 | 1.000 |
+| M3 Piccolo synth (targets repetition) | 0.4999 | 1.000 |
+| **M5 standalone optimum** | **0.0670** | **0.171** |
+
+The M3 Piccolo synthesizer reproduces the repetition encoder exactly
+(subspace fidelity 1.000) and inherits its Petz objective (0.500).
+The M5 standalone discovery objective finds a fundamentally different
+code (fid 0.17 to repetition) with **7.5× lower Petz error**.
+
+The M3-vs-M5 contrast is the thesis novelty in one table: **fixed-
+target QOC and discovery-objective QOC give qualitatively different
+answers, and discovery is the right framework for QEC** at scales where
+no perfect analytic code exists.
+
+### Layer 3 — Piccolo integration (designed, not implemented)
+
+See `docs/M5_DESIGN.md` for the full design document. Four
+sub-problems identified:
+
+- **A. Custom objective.** Replace `_state_objective` with a terminal
+  cost that assembles `V_opt` from final iso-vec states and evaluates
+  `petz_recovery_objective`. Likely a monkey-patch on `SmoothPulseProblem`
+  or a drop to `DirectTrajOpt.jl` per HANDOFF §M5.
+- **B. Differentiability.** `matrix_inv_sqrt` uses `eigen(Hermitian(·))`
+  with a hard cutoff — not natively ForwardDiff-friendly through exact
+  Hessian. Options: smooth Tikhonov regularization, custom adjoints, or
+  L-BFGS only. Start with L-BFGS only.
+- **C. Initial conditions.** Cold start unlikely to succeed at n=5;
+  warm-start from M4's converged pulse or curriculum-optimize from
+  fixed-target to Petz objective.
+- **D. Choice of A_list.** Physics design — uniform single-qubit
+  erasures (smallest meaningful), holographic-biased (larger subregions
+  weighted more), or sampled. Coordinate with thesis advisor on the
+  formulation that best supports the holographic-codes interpretation.
+
+### Cost note
+
+Per M4 numbers, a Piccolo Phase 2 solve on (5 qubits, 10 drives, T=25)
+is ~4 hours; each M5 objective evaluation costs ~5× more than M4 due to
+the per-erasure Petz computations. So a single M5 solve at this size is
+~10-20 hours, and multistart on top is several days of compute. The
+laptop will exercise the toolchain on (n_bdy=3); thesis-scale runs want
+a cluster.
