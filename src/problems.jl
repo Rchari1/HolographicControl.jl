@@ -41,6 +41,29 @@ function nn_xx_yy_drift(n_qubits::Int; J::Real = 1.0)
 end
 
 """
+    nn_heisenberg_drift(n_qubits; J=1.0) -> Matrix{ComplexF64}
+
+Nearest-neighbor isotropic Heisenberg drift Hamiltonian on `n_qubits`:
+
+    H_drift = J · Σ_{i=1}^{n-1} (X_i X_{i+1} + Y_i Y_{i+1} + Z_i Z_{i+1}).
+
+The HANDOFF §M4 prescribes this drift for the [[5,1,3]] synthesis. Combined
+with single-site X,Y controls on each qubit the chain is universally
+controllable on `SU(2^n)`.
+"""
+function nn_heisenberg_drift(n_qubits::Int; J::Real = 1.0)
+    H = zeros(ComplexF64, 2^n_qubits, 2^n_qubits)
+    for i in 1:(n_qubits - 1)
+        for axis in ('X', 'Y', 'Z')
+            chars = fill('I', n_qubits)
+            chars[i] = axis; chars[i+1] = axis
+            H += pauli_string(String(chars))
+        end
+    end
+    return ComplexF64(J) * H
+end
+
+"""
     single_qubit_xy_drives(n_qubits) -> Vector{Matrix{ComplexF64}}
 
 The `2 n_qubits` single-site control Hamiltonians `{X_1, Y_1, X_2, Y_2, ...}`
