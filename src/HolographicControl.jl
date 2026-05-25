@@ -8,7 +8,11 @@ using LinearAlgebra
 # All multi-qubit operators in this package are built and indexed under this convention.
 
 include("reference_codes/five_qubit_code.jl")
+include("recovery.jl")
 
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants
+export partial_trace, embed_operator
+export matrix_sqrt, matrix_inv_sqrt, hermitian_function
+export petz_map, petz_recovery_error
 
 end # module
