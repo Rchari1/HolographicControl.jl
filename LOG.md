@@ -88,37 +88,240 @@ Added two extraction helpers:
 NLP fidelity 0.999999, rollout fidelity 0.999999 (agreement 6.4e-8), wall
 time ~4 min.
 
-## M4 — [[5,1,3]] synthesis (in progress, stagnated)
+## M4 — [[5,1,3]] synthesis (PASSED via XY drift + seed=3)
+
+### M4a — initial attempt with HANDOFF-prescribed Heisenberg drift
 
 Drift: nearest-neighbor Heisenberg `J·Σ(XX+YY+ZZ)`. Drives: 10 single-site
 X,Y on each qubit. Targets: `five_qubit_isometry()` from M1.
 
-**Status: stagnated at fidelity ≈ 0.912.** Phase 2 exact Hessian converged
-KKT-exact (`inf_du ~ 1e-9`, `inf_pr ~ 1e-15`) — this is a genuine local
-minimum, not a feasibility issue. Increasing T from 25 → 50 (4× more
-control DOFs) did not escape the basin: both runs converged to objective
-~9.2 and fidelity ~0.91 from seed=0.
+Stagnated at fidelity ≈ 0.912. Phase 2 exact Hessian converged KKT-exact
+(`inf_du ~ 1e-9`, `inf_pr ~ 1e-15`) — a genuine local minimum, not
+feasibility. Increasing T 25 → 50 did not escape. See
+`examples/04_synthesize_five_qubit.jl` (the stagnation case study).
 
-**Cost data (for M5 planning):**
-- T=25 Phase 2: 13 iters × ~580 s/iter = 2 h 5 min wall
-- T=50 Phase 2: aborted at iter 20 of 30 after ~4 h (converging to same basin)
+### M4b — escape diagnostics
+
+Three cheap diagnostics under the same problem builder:
+
+- **Seed sweep (`examples/04b_seed_diagnostic.jl`).** Phase 1 on seeds 1–4.
+  Result: all 5 seeds land in band 0.900–0.936, range 0.036. **H2**: the
+  0.91 attractor is a structural basin under Heisenberg, not seed luck.
+  Multistart on this drift won't help.
+- **Structure probe (`examples/04c_structure_probe.jl`).** On the best
+  Phase 1 seed, per-column |⟨V|V_opt⟩|² ≈ 0.93 each with relative phase
+  mismatch only 1.67°. **H_struct**: the states themselves are wrong, not
+  the phases. `free_phase=true` would not help.
+- **Drive-bounds probe (`examples/04d_drive_bounds_probe.jl`).** Bounds
+  ∈ {1.0, 2.0, 4.0} all under-perform the 1.0 baseline. HANDOFF §7's
+  caution was correct on algorithmic grounds too: larger bounds → more
+  local minima. The bounds are not the bottleneck.
+
+### M4c — broken cubic-spline detour
+
+`isometry_synthesis_problem_cubic` (`src/problems.jl` + sanity check
+`examples/04e_cubic_splines_m3_sanity.jl`) added the `CubicSplinePulse` /
+`SplinePulseProblem` path. Sanity check on M3 exposed a fundamental
+incompatibility: Piccolo's default `BilinearIntegrator` samples *only*
+the `:u` values at knots (piecewise-constant), but `CubicSplinePulse`
+also carries `:du` Hermite tangents as independent NLP variables that
+don't enter the dynamics constraint. The optimizer can set arbitrary
+`:du`; the rollout uses the full Hermite spline (both `:u` and `:du`);
+the two diverge. Observed: NLP fidelity 1.000000, rollout 0.776678.
+
+The correct integrator is `SplineIntegrator` from Piccolissimo (closed
+dep, forbidden per HANDOFF §7), so the cubic path is preserved in the
+source as a documented starting point only.
+
+### M4d — structural sweep finds the fix
+
+`examples/04f_structural_sweep.jl` runs Phase 1 on five (drift, drives)
+configurations at seed=2:
+
+```
+Heisenberg + X,Y     (HANDOFF default)   0.936
+XY-only + X,Y        ← WINNER             0.983
+Heisenberg + X,Y,Z                        0.958
+XY-only + X,Y,Z                           0.967
+ZZ-only + X,Y                             0.927
+```
+
+Dropping the `ZZ` term from the drift Hamiltonian (Heisenberg → XX+YY)
+gives a 4-percentage-point Phase 1 gain. Likely interpretation: the
+Heisenberg's full SO(3) symmetry creates a robust basin of attraction;
+XY's smaller U(1)×U(1) symmetry leaves more topologically-distinct
+basins for L-BFGS to find.
+
+Adding `Z` controls helped slightly but less than removing `ZZ` from
+drift, and at higher per-iter cost (15 drives vs 10).
+
+### M4e — seed sweep at the WINNING drift
+
+The structural sweep tested only seed=2. `examples/04h_xy_seed_sweep.jl`
+re-runs Phase 1 with the XY drift across seeds 0,1,2,3,4:
+
+```
+seed=0: Phase 1 = 0.983988
+seed=1: Phase 1 = 0.986643
+seed=2: Phase 1 = 0.982732
+seed=3: Phase 1 = 0.995391    ← already above 0.99 from L-BFGS alone
+seed=4: Phase 1 = 0.982605
+```
+
+XY drift has richer basin structure than Heisenberg (range 0.013 vs
+0.036), so seed selection actually buys us something here.
+
+### M4 — final working result
+
+`examples/04g_synthesize_five_qubit_xy.jl` with XY drift + seed=3 + Phase
+1 + Phase 2 + Petz erasure verification:
+
+| Metric | Value |
+|---|---|
+| Phase 1 fidelity | 0.998852 |
+| Phase 2 NLP fidelity | 0.999244 |
+| Rollout fidelity (Tsit5, :constant) | 0.999196 |
+| NLP-rollout gap | 4.8e-5 |
+| Max single-qubit erasure error |Δ| | 1.94e-4 (qubit 3) |
+| Wall time | 4 hours |
+
+**Both HANDOFF §M4 criteria PASS:** subspace fidelity > 0.99 AND every
+single-qubit-erasure Petz recovery within 1e-3 of analytic (all five well
+under, max 1.94e-4 vs threshold 1e-3).
+
+**Documented departures from HANDOFF §M4**, made under explicit user
+authorization to escape the stagnation:
+  1. Drift Hamiltonian: nearest-neighbor Heisenberg → nearest-neighbor
+     XX+YY (drop the ZZ term).
+  2. Random seed: tried multiple, settled on seed=3.
+
+The 5-qubit system, single-site X,Y controls on every qubit, bounded
+`|u| ≤ 1.0`, and chain topology are unchanged.
+
+### Cost data (for M5 planning)
+
+- Heisenberg + X,Y, T=25 Phase 2: 13 iters × ~580 s/iter = 2 h 5 min
+- XY drift + X,Y, T=25 Phase 2: 30 iters × ~475 s/iter = 4 h
 - Per-iter scales ~85× from M3 (3Q, 8-dim) to M4 (5Q, 32-dim), driven by
-  `expv` cost and ForwardDiff'd Hessian chunks.
+  `expv` cost and ForwardDiff'd Hessian chunks. Scaling beyond a single
+  pentagon (8+ qubits) will need a different parameterization or a
+  proper spline integrator (currently Piccolissimo-only).
 
-**Likely escapes (not yet attempted):** multistart over seeds, `free_phase=true`,
-alternate drift (XY + single-site Z controls), warm-start from M1's
-analytic `V` instead of cold-start. See
-`examples/04_synthesize_five_qubit.jl` header for the full list.
-
-**Implication for the package:** the scaling cliff is real. Going beyond a
-single HaPPY pentagon (the [[5,1,3]]) to multi-pentagon tilings (8+
-qubits, 256+ dim) will require dropping ZeroOrderPulse for
-CubicSplinePulse (10–20× fewer DOFs) or moving to DirectTrajOpt.jl with
-custom Hessian structure. HANDOFF §M5 already anticipates this.
-
-## M5 — Objective-driven synthesis (not started)
+## M5 — Objective-driven synthesis (Layers 1+2 done, Layer 3 designed)
 
 The novel research contribution: instead of targeting a fixed `V_target`,
 optimize over isometries `V` to minimize `Σ_A w_A · petz_recovery_error(V, A)`
-under bounded controls. Awaits M4's resolution (either an escape from the
-0.91 basin, or a documented pivot to a different problem geometry).
+under bounded controls.
+
+Built in three layers so the metric, the optimization concept, and the
+Piccolo integration are validated separately.
+
+### Layer 1 — the metric
+
+`petz_recovery_objective(V; A_list, weights, cutoff)` in `src/recovery.jl`
+aggregates Petz recovery errors over weighted subregions. Verified in
+`examples/05a_petz_objective_demo.jl` on `(n_bdy=3, n_bulk=1)`:
+
+| isometry                         | objective |
+|----------------------------------|-----------|
+| 3-qubit repetition code          | 0.500     |
+| trivial \|q,0,0⟩ embedding       | 0.250     |
+| random isometry (seed=42)        | 0.165     |
+| \|0⟩=\|000⟩, \|1⟩=\|W⟩           | 0.271     |
+
+The repetition code's 0.5 is the dephasing-channel signature — repetition
+preserves the classical bit but not the phase, so the Petz objective
+correctly classifies it as a *classical* code, not a quantum one. The
+random isometry actually beats repetition here, which is informative:
+the discovery objective rewards even spreading of information.
+
+### Layer 2 — standalone optimization
+
+`examples/05b_petz_optimization_demo.jl` runs random restart + greedy
+coordinate descent over the polar parameterization of V (no Piccolo).
+On `(n_bdy=3, n_bulk=1)`:
+- 300 random restarts → best objective 0.117
+- Coordinate descent → 0.0670
+- All three per-erasure errors converged to the same value (symmetric
+  across qubit permutations).
+- Beats every hand-coded baseline by 2.47× — smallest demonstration of
+  the M5 contribution: *a code discovered by optimizing recovery
+  directly, outperforming any analytic encoder we tried*.
+
+`examples/05c_petz_optimization_n5.jl` extends to `(n_bdy=5, n_bulk=1)`:
+
+| configuration | Petz objective | fid to V_513 |
+|---|---|---|
+| analytic [[5,1,3]] | 4.0e-16 | 1.000 |
+| random isometry (seed=42) | 3.4e-2 | (irrelevant) |
+| **cold random restart + descent** | **4.8e-7** | **0.0003** |
+| warm-start from V_513+noise + descent | 4.3e-8 | 0.7349 |
+
+**The manifold observation.** Both descent paths found codes with
+essentially-zero Petz recovery error, but **neither is V_513**. The cold-
+descent V_opt has subspace fidelity *0.0003* to V_513 (essentially
+orthogonal in code-space) yet objective 5e-7. The warm-start V_opt has
+fidelity 0.735 to V_513 yet objective 4e-8.
+
+The set of codes with low Petz error is a **manifold**, not a point.
+For d_bulk=2, the Grassmannian Gr(2, 32) is 120-real-dimensional; the
+low-Petz subvariety is evidently large. Different optimization paths
+descend to different members of the same equivalence class.
+
+This is excellent news for the Piccolo M5 path: **the optimizer doesn't
+need to find V_513 specifically — it just needs to find any point on
+the low-Petz-error manifold**, which is a much easier problem than
+fixed-target synthesis. From cold start, coordinate descent finds the
+manifold in ~94 s of compute.
+
+### Layer 2 bonus — the M3 → M5 link
+
+`examples/05d_m3_vs_m5_link.jl` exercises the cross-layer plumbing
+(Piccolo + Petz objective evaluation) without needing the custom
+objective infrastructure of Layer 3. Run on `(n_bdy=3, n_bulk=1)`:
+
+| encoder | Petz obj | fid to rep |
+|---|---|---|
+| analytic 3Q repetition (M3 target) | 0.5000 | 1.000 |
+| M3 Piccolo synth (targets repetition) | 0.4999 | 1.000 |
+| **M5 standalone optimum** | **0.0670** | **0.171** |
+
+The M3 Piccolo synthesizer reproduces the repetition encoder exactly
+(subspace fidelity 1.000) and inherits its Petz objective (0.500).
+The M5 standalone discovery objective finds a fundamentally different
+code (fid 0.17 to repetition) with **7.5× lower Petz error**.
+
+The M3-vs-M5 contrast is the thesis novelty in one table: **fixed-
+target QOC and discovery-objective QOC give qualitatively different
+answers, and discovery is the right framework for QEC** at scales where
+no perfect analytic code exists.
+
+### Layer 3 — Piccolo integration (designed, not implemented)
+
+See `docs/M5_DESIGN.md` for the full design document. Four
+sub-problems identified:
+
+- **A. Custom objective.** Replace `_state_objective` with a terminal
+  cost that assembles `V_opt` from final iso-vec states and evaluates
+  `petz_recovery_objective`. Likely a monkey-patch on `SmoothPulseProblem`
+  or a drop to `DirectTrajOpt.jl` per HANDOFF §M5.
+- **B. Differentiability.** `matrix_inv_sqrt` uses `eigen(Hermitian(·))`
+  with a hard cutoff — not natively ForwardDiff-friendly through exact
+  Hessian. Options: smooth Tikhonov regularization, custom adjoints, or
+  L-BFGS only. Start with L-BFGS only.
+- **C. Initial conditions.** Cold start unlikely to succeed at n=5;
+  warm-start from M4's converged pulse or curriculum-optimize from
+  fixed-target to Petz objective.
+- **D. Choice of A_list.** Physics design — uniform single-qubit
+  erasures (smallest meaningful), holographic-biased (larger subregions
+  weighted more), or sampled. Coordinate with thesis advisor on the
+  formulation that best supports the holographic-codes interpretation.
+
+### Cost note
+
+Per M4 numbers, a Piccolo Phase 2 solve on (5 qubits, 10 drives, T=25)
+is ~4 hours; each M5 objective evaluation costs ~5× more than M4 due to
+the per-erasure Petz computations. So a single M5 solve at this size is
+~10-20 hours, and multistart on top is several days of compute. The
+laptop will exercise the toolchain on (n_bdy=3); thesis-scale runs want
+a cluster.

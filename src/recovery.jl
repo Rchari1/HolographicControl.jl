@@ -231,3 +231,58 @@ function petz_recovery_error(
     F_ent /= d_bulk^2
     return 1 - real(F_ent)
 end
+
+# --------------------------------------------------------------------------- #
+# Aggregate objective for objective-driven synthesis (M5)
+# --------------------------------------------------------------------------- #
+
+"""
+    petz_recovery_objective(V; A_list, weights=nothing, cutoff=1e-10) -> Float64
+
+Sum the Petz recovery error of `V` over the boundary subregions in
+`A_list`, weighted by `weights` (defaults to uniform):
+
+    J(V) = Σ_A w_A · petz_recovery_error(V, A).
+
+This is the **discovery objective** of HANDOFF §M5: instead of targeting a
+fixed analytic encoder, we ask the optimizer to find any isometry `V`
+that minimizes total recovery error across a chosen set of erasure
+patterns. Useful weighting choices:
+  * uniform over all weight-`w` erasures — drives the code toward
+    distance ≥ `w + 1` if achievable
+  * biased toward larger subregions — pushes for higher distance
+  * single specific `A` — recovers that subregion's wedge only
+
+`A_list::Vector{<:AbstractVector{Int}}` lists the subregions; each entry
+is a list of kept-qubit indices under the package's big-endian convention.
+`weights` is normalized internally (Σ w = 1) for scale invariance unless
+you want a specific weighting.
+
+For an analytic [[5,1,3]] target and `A_list = all single-qubit erasures`,
+this returns essentially 0 (≤ 1e-15 in practice). For a random isometry
+it returns O(1).
+"""
+function petz_recovery_objective(
+    V::AbstractMatrix;
+    A_list::AbstractVector{<:AbstractVector{Int}},
+    weights::Union{Nothing, AbstractVector{<:Real}} = nothing,
+    cutoff::Float64 = 1e-10,
+)
+    isempty(A_list) && error("A_list must contain at least one subregion")
+    w = if isnothing(weights)
+        fill(1.0 / length(A_list), length(A_list))
+    else
+        length(weights) == length(A_list) ||
+            error("weights length $(length(weights)) ≠ A_list length $(length(A_list))")
+        any(<(0), weights) && error("weights must be non-negative")
+        s = sum(weights)
+        s > 0 || error("weights must sum to a positive value")
+        weights ./ s
+    end
+
+    total = 0.0
+    @inbounds for (i, A) in pairs(A_list)
+        total += w[i] * petz_recovery_error(V, A; cutoff)
+    end
+    return total
+end
