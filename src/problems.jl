@@ -194,6 +194,75 @@ end
 # --------------------------------------------------------------------------- #
 
 """
+    isometry_synthesis_problem_cubic(V_target, H_drift, H_drives, drive_bounds;
+                                      N_knots=25, duration=10.0, Q=100.0,
+                                      R=1e-2, du_bound=10.0, seed=0)
+
+Cubic-spline variant of [`isometry_synthesis_problem`](@ref).
+
+!!! warning "Currently broken with public-only dependencies"
+    With Piccolo's default `BilinearIntegrator` (the only integrator that
+    works for `MultiKetTrajectory` in public code), the dynamics constraint
+    is `x_{k+1} - expv(Δt·G(u_k))·x_k = 0`, which samples *only* the `:u`
+    values at knots and treats them as piecewise-constant. With
+    `CubicSplinePulse` the trajectory ALSO carries `:du` Hermite tangents
+    as independent NLP variables, but they don't enter the dynamics
+    constraint. The optimizer is therefore free to set arbitrary `:du`
+    values and the NLP-reported fidelity becomes meaningless: the rollout
+    (which uses the full Hermite spline, i.e. both `:u` and `:du`)
+    integrates a *different* pulse than what the NLP optimized.
+
+    Observed on M3 (3-qubit repetition): NLP fidelity 1.000000, rollout
+    fidelity 0.776678 — gap of 0.223.
+
+    The correct integrator for this combination is `SplineIntegrator` from
+    Piccolissimo, which integrates the actual cubic spline. That package
+    is currently a closed dependency (HANDOFF §7), so this function is
+    kept in the source as documentation and a starting point for future
+    extension, but should not be used for results.
+
+The intended rationale (preserved for the future): cubic Hermite splines
+parameterize smooth controls with comparable expressiveness at far fewer
+knots than ZeroOrderPulse (per amico:setup Rule 3: ~11 knots for 1Q ≈ 51
+ZOH timesteps). Once a public spline-integrator is available this should
+give a smoother optimization landscape with shallower local minima.
+"""
+function isometry_synthesis_problem_cubic(
+    V_target::AbstractMatrix,
+    H_drift::AbstractMatrix,
+    H_drives::Vector{<:AbstractMatrix},
+    drive_bounds::AbstractVector{<:Real};
+    N_knots::Int = 25,
+    duration::Real = 10.0,
+    Q::Float64 = 100.0,
+    R::Float64 = 1e-2,
+    du_bound::Float64 = 10.0,
+    seed::Union{Nothing, Int} = 0,
+)
+    d_bdy, d_bulk = size(V_target)
+    ispow2(d_bdy) || error("size(V_target, 1) = $d_bdy must be a power of 2")
+    ispow2(d_bulk) || error("size(V_target, 2) = $d_bulk must be a power of 2")
+    isapprox(V_target' * V_target, I; atol=1e-8) ||
+        error("V_target is not an isometry: ‖V'V - I‖ = $(opnorm(V_target' * V_target - I))")
+    length(H_drives) == length(drive_bounds) ||
+        error("H_drives has $(length(H_drives)) entries but drive_bounds has $(length(drive_bounds))")
+
+    sys = QuantumSystem(H_drift, H_drives, collect(Float64.(drive_bounds)))
+
+    times = collect(range(0.0, Float64(duration); length=N_knots))
+    seed === nothing || Random.seed!(seed)
+    initial_controls = 0.1 * randn(length(H_drives), N_knots)
+    # Default zero derivatives at each knot — optimizer determines them.
+    pulse = CubicSplinePulse(initial_controls, times)
+
+    initials = encoding_input_states(V_target)
+    goals = [Vector{ComplexF64}(V_target[:, j]) for j in 1:d_bulk]
+
+    qtraj = MultiKetTrajectory(sys, pulse, initials, goals)
+    return SplinePulseProblem(qtraj; Q=Q, R=R, du_bound=du_bound)
+end
+
+"""
     synthesized_isometry(qcp) -> Matrix{ComplexF64}
 
 Extract the synthesized isometry from a solved problem built by
@@ -247,12 +316,27 @@ function rolled_out_isometry(qcp; abstol::Real=1e-8, reltol::Real=1e-8)
     qtraj = qcp.qtraj
     d_bulk = length(qtraj.initials)
     d_bdy = length(first(qtraj.goals))
+
+    # Auto-detect pulse type → match rollout interpolation. ZeroOrderPulse is
+    # piecewise-constant; CubicSplinePulse is cubic Hermite. Mismatched
+    # interpolation integrates a different pulse than the NLP solved for.
+    pulse_name = nameof(typeof(qtraj.pulse))
+    interp = if pulse_name === :ZeroOrderPulse
+        :constant
+    elseif pulse_name === :CubicSplinePulse
+        :cubic
+    elseif pulse_name === :LinearSplinePulse
+        :linear
+    else
+        error("Unknown pulse type for rollout: $pulse_name")
+    end
+
     V_rolled = zeros(ComplexF64, d_bdy, d_bulk)
     for j in 1:d_bulk
         ψ̃_traj_j = ket_rollout(
             traj, sys;
             state_name = Symbol("ψ̃$j"),
-            interpolation = :constant,
+            interpolation = interp,
             abstol = abstol,
             reltol = reltol,
         )

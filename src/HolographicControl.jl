@@ -19,6 +19,7 @@ export matrix_sqrt, matrix_inv_sqrt, hermitian_function
 export petz_map, petz_recovery_error
 export nn_xx_yy_drift, nn_heisenberg_drift, single_qubit_xy_drives
 export encoding_input_states
-export isometry_synthesis_problem, synthesized_isometry, rolled_out_isometry, subspace_fidelity
+export isometry_synthesis_problem, isometry_synthesis_problem_cubic
+export synthesized_isometry, rolled_out_isometry, subspace_fidelity
 
 end # module
