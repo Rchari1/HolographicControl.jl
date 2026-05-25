@@ -16,7 +16,7 @@ export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants
 export three_qubit_repetition_isometry
 export partial_trace, embed_operator
 export matrix_sqrt, matrix_inv_sqrt, hermitian_function
-export petz_map, petz_recovery_error
+export petz_map, petz_recovery_error, petz_recovery_objective
 export nn_xx_yy_drift, nn_heisenberg_drift, nn_zz_drift
 export single_qubit_xy_drives, single_qubit_xyz_drives
 export encoding_input_states
