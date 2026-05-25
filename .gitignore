@@ -1,0 +1,17 @@
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+/docs/build/
+/docs/site/
+.DS_Store
+.vscode/
+*.swp
+*~
+
+# Optimization artifacts (regenerate from scripts; do not commit)
+/data/
+/scratch/out/
+/examples/*.jld2
+
+# Planning-Claude handoff doc — kept local (internal context, not for public repo)
+/HANDOFF.md
