@@ -17,7 +17,8 @@ export three_qubit_repetition_isometry
 export partial_trace, embed_operator
 export matrix_sqrt, matrix_inv_sqrt, hermitian_function
 export petz_map, petz_recovery_error
-export nn_xx_yy_drift, nn_heisenberg_drift, single_qubit_xy_drives
+export nn_xx_yy_drift, nn_heisenberg_drift, nn_zz_drift
+export single_qubit_xy_drives, single_qubit_xyz_drives
 export encoding_input_states
 export isometry_synthesis_problem, isometry_synthesis_problem_cubic
 export synthesized_isometry, rolled_out_isometry, subspace_fidelity

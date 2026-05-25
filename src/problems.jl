@@ -81,6 +81,46 @@ function single_qubit_xy_drives(n_qubits::Int)
     return drives
 end
 
+"""
+    single_qubit_xyz_drives(n_qubits) -> Vector{Matrix{ComplexF64}}
+
+All `3 n_qubits` single-site Pauli controls `{X_i, Y_i, Z_i}_{i=1..n}` in
+big-endian ordering. Adds direct Z-axis authority on top of
+[`single_qubit_xy_drives`](@ref); useful when the X,Y-only control space
+gets trapped in a structural basin.
+"""
+function single_qubit_xyz_drives(n_qubits::Int)
+    drives = Vector{Matrix{ComplexF64}}()
+    for i in 1:n_qubits, axis in ('X', 'Y', 'Z')
+        chars = fill('I', n_qubits)
+        chars[i] = axis
+        push!(drives, pauli_string(String(chars)))
+    end
+    return drives
+end
+
+"""
+    nn_zz_drift(n_qubits; J=1.0) -> Matrix{ComplexF64}
+
+Nearest-neighbor Ising-Z drift Hamiltonian:
+
+    H_drift = J · Σ_{i=1}^{n-1} Z_i Z_{i+1}.
+
+Differs qualitatively from `nn_xx_yy_drift` and `nn_heisenberg_drift`: it
+commutes with every single-qubit Z, so the dynamics + X,Y controls realize
+a transverse-field Ising model. Useful as a contrast drift to see whether
+the Heisenberg-specific symmetry is the source of M4 stagnation.
+"""
+function nn_zz_drift(n_qubits::Int; J::Real = 1.0)
+    H = zeros(ComplexF64, 2^n_qubits, 2^n_qubits)
+    for i in 1:(n_qubits - 1)
+        chars = fill('I', n_qubits)
+        chars[i] = 'Z'; chars[i+1] = 'Z'
+        H += pauli_string(String(chars))
+    end
+    return ComplexF64(J) * H
+end
+
 # --------------------------------------------------------------------------- #
 # Subspace gate fidelity
 # --------------------------------------------------------------------------- #
