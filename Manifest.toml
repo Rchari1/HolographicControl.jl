@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "60963996da8298546d55a393e20a934d81691fc1"
+project_hash = "6c29a969d86741e939cab04b3e44ad9dc2557dbe"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -930,7 +930,7 @@ uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
 version = "0.2.0"
 
 [[deps.HolographicControl]]
-deps = ["LinearAlgebra", "Random"]
+deps = ["LinearAlgebra", "Piccolo", "Random", "Serialization"]
 path = "."
 uuid = "37bdc1d2-76f7-4083-b26e-ce619afd1af6"
 version = "0.1.0-dev"

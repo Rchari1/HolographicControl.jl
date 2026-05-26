@@ -72,10 +72,11 @@ export single_qubit_x_drives, single_qubit_xy_drives, single_qubit_xyz_drives
 # --- recovery.jl ---
 export partial_trace, embed_operator
 export hermitian_function, matrix_sqrt, matrix_inv_sqrt
-export petz_map, petz_recovery_error
+export denman_beavers, matrix_sqrt_smooth, matrix_inv_sqrt_smooth
+export petz_map, petz_recovery_error, petz_recovery_error_smooth
 
 # --- objectives.jl ---
-export petz_recovery_objective
+export petz_recovery_objective, petz_recovery_objective_smooth
 export uniform_erasure_subregions, erasure_subregions_up_to
 
 # --- reference codes ---
@@ -89,6 +90,7 @@ export save_pulse, load_pulse
 
 # --- problems.jl (Piccolo-dependent) ---
 export isometry_synthesis_problem, isometry_synthesis_problem_cubic
+export petz_isometry_synthesis_problem
 export synthesized_isometry, rolled_out_isometry
 
 end # module

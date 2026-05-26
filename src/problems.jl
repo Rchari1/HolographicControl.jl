@@ -161,8 +161,127 @@ function isometry_synthesis_problem_cubic(
 end
 
 # --------------------------------------------------------------------------- #
-# Post-solve extraction — NLP view vs physical rollout
+# M5 — objective-driven (Petz-aggregate) isometry synthesis
 # --------------------------------------------------------------------------- #
+
+"""
+    petz_isometry_synthesis_problem(H_drift, H_drives, drive_bounds;
+                                     n_bdy, n_bulk, A_list, kwargs...)
+
+Build a Piccolo problem whose objective is the **aggregate Petz recovery
+error** (`petz_recovery_objective_smooth`) over a chosen list of erasure
+subregions, instead of phase-coherent infidelity to a fixed target.
+
+This is the M5 Layer-3 builder — the same `MultiKetTrajectory +
+SmoothPulseProblem` plumbing as `isometry_synthesis_problem`, but the
+fidelity term is suppressed (`Q = 0`) and a `TerminalObjective` wrapping
+`petz_recovery_objective_smooth` is added. The trajectory's `goals` still
+need to be set (Piccolo's construction requires them); we use a random
+isometry as a placeholder, but the optimizer ignores it via `Q = 0` —
+the only thing it optimizes against is the Petz aggregate at the final
+knot.
+
+# Arguments
+- `H_drift::AbstractMatrix`: `2^n_bdy × 2^n_bdy` drift Hamiltonian
+- `H_drives::Vector{<:AbstractMatrix}`: control Hamiltonians
+- `drive_bounds::AbstractVector{<:Real}`: per-drive amplitude bounds
+- `n_bdy::Int`, `n_bulk::Int`: system shape (no `V_target` needed)
+- `A_list::Vector{<:Vector{Int}}`: kept-qubit subregions defining the Petz
+  aggregate. Each entry lists which qubits remain after erasure under the
+  package's big-endian convention.
+
+# Keyword Arguments
+- `weights`: optional non-negative weights for each subregion in `A_list`
+- `T::Int = 100`: number of `ZeroOrderPulse` knots
+- `duration::Real = 10.0`: initial gate duration
+- `R::Float64 = 1e-2`: smoothness regularization weight
+- `ddu_bound::Float64 = 1.0`: bound on discrete second derivative
+- `Q_petz::Float64 = 100.0`: weight on the Petz objective
+- `ε_petz::Real = 1e-6`: Tikhonov regularization in the smooth Petz
+- `seed::Union{Nothing, Int} = 0`: seed for random initial controls
+
+# Returns
+A `QuantumControlProblem` with the Petz aggregate as the only
+non-regularization objective. After solving, use
+[`synthesized_isometry`](@ref) and [`rolled_out_isometry`](@ref) as usual
+to extract `V_opt`.
+"""
+function petz_isometry_synthesis_problem(
+    H_drift::AbstractMatrix,
+    H_drives::Vector{<:AbstractMatrix},
+    drive_bounds::AbstractVector{<:Real};
+    n_bdy::Int,
+    n_bulk::Int,
+    A_list::AbstractVector{<:AbstractVector{Int}},
+    weights::Union{Nothing, AbstractVector{<:Real}} = nothing,
+    T::Int = 100,
+    duration::Real = 10.0,
+    R::Float64 = 1e-2,
+    ddu_bound::Float64 = 1.0,
+    Q_petz::Float64 = 100.0,
+    ε_petz::Real = 1e-6,
+    seed::Union{Nothing, Int} = 0,
+)
+    d_bdy = 1 << n_bdy
+    d_bulk = 1 << n_bulk
+    size(H_drift) == (d_bdy, d_bdy) ||
+        error("H_drift has size $(size(H_drift)), expected ($d_bdy, $d_bdy)")
+    length(H_drives) == length(drive_bounds) ||
+        error("length mismatch: H_drives = $(length(H_drives)), drive_bounds = $(length(drive_bounds))")
+    isempty(A_list) && error("A_list must contain at least one subregion")
+    weights === nothing || length(weights) == length(A_list) ||
+        error("weights length must match A_list length")
+
+    # Dummy V_target — a random isometry whose columns serve only as Piccolo's
+    # `goals`. With Q = 0 in `isometry_synthesis_problem`, the corresponding
+    # fidelity objective is zero-weighted; the only term that matters is the
+    # Petz aggregate we add below.
+    seed === nothing || Random.seed!(seed)
+    V_target_dummy = random_isometry(d_bdy, d_bulk)
+
+    qcp = isometry_synthesis_problem(
+        V_target_dummy, H_drift, H_drives, drive_bounds;
+        T = T, duration = duration, Q = 0.0, R = R, ddu_bound = ddu_bound,
+        seed = seed,
+    )
+
+    traj = get_trajectory(qcp)
+    state_names = [Symbol("ψ̃$j") for j in 1:d_bulk]
+
+    # Closure-captured constants (avoid recomputing inside the loss):
+    A_list_local  = [collect(A) for A in A_list]
+    weights_local = weights
+    ε_local       = float(ε_petz)
+    d_bdy_local   = d_bdy
+    d_bulk_local  = d_bulk
+
+    # The loss is called by `KnotPointObjective` with the concatenation of
+    # the requested variables at the final timestep — i.e. the iso-vec
+    # representation of all `d_bulk` final kets, stacked into a single
+    # `2 · d_bdy · d_bulk`-element real vector. We reconstruct the complex
+    # isometry V and feed it through the smooth Petz objective.
+    function petz_loss(concat_vec)
+        state_dim = 2 * d_bdy_local                 # iso-vec length per ket
+        T_real = eltype(concat_vec)
+        T_complex = Complex{T_real}
+        V = Matrix{T_complex}(undef, d_bdy_local, d_bulk_local)
+        @inbounds for j in 1:d_bulk_local
+            base = (j - 1) * state_dim
+            # iso_to_ket convention: first d_bdy entries are Re(ψ), next d_bdy are Im(ψ)
+            for i in 1:d_bdy_local
+                V[i, j] = complex(concat_vec[base + i], concat_vec[base + d_bdy_local + i])
+            end
+        end
+        return petz_recovery_objective_smooth(
+            V; A_list = A_list_local, weights = weights_local, ε = ε_local,
+        )
+    end
+
+    obj_petz = TerminalObjective(petz_loss, state_names, traj; Q = Q_petz)
+    qcp.prob.objective = qcp.prob.objective + obj_petz
+
+    return qcp
+end
 
 """
     synthesized_isometry(qcp) -> Matrix{ComplexF64}

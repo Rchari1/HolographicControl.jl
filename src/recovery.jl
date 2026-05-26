@@ -165,6 +165,82 @@ matrix_inv_sqrt(M::AbstractMatrix; cutoff::Float64 = 1e-10) =
     hermitian_function(M, λ -> 1 / sqrt(complex(λ)); cutoff)
 
 # --------------------------------------------------------------------------- #
+# Auto-differentiable matrix square root / inverse square root (Denman–Beavers)
+# --------------------------------------------------------------------------- #
+#
+# Used by the M5 Petz objective: the eigen-based `matrix_(inv_)sqrt` above is
+# not ForwardDiff-compatible (`eigen!` has no method for `Hermitian{Dual}`),
+# so for objectives that need to be ForwardDiff-traced (Piccolo's gradient /
+# Hessian path) we need a pure-matrix-arithmetic alternative.
+#
+# Denman–Beavers iteration produces both `sqrt(A)` and `A^{-1/2}`
+# simultaneously via:
+#   Y_0 = A,  Z_0 = I
+#   Y_{k+1} = (Y_k + Z_k^{-1}) / 2
+#   Z_{k+1} = (Z_k + Y_k^{-1}) / 2
+# with Y_∞ = sqrt(A) and Z_∞ = A^{-1/2}.  Quadratic convergence.
+# Tikhonov regularization (`ε`) ensures A is strictly positive-definite
+# so the iteration converges robustly even for rank-deficient inputs.
+
+"""
+    denman_beavers(A; ε=1e-8, max_iter=30, tol=1e-12) -> (sqrt_A, inv_sqrt_A)
+
+Compute the Hermitian square root and inverse square root of a positive
+semi-definite matrix `A` via Denman–Beavers iteration. Returns the pair
+`(sqrt(A + εI), (A + εI)^{-1/2})`.
+
+Pure matrix-arithmetic (no eigendecomposition), so the result is
+differentiable through `ForwardDiff` — this is the version used by the
+M5 Petz objective (`petz_recovery_error_smooth`,
+`petz_recovery_objective_smooth`).
+
+The `ε` is a Tikhonov regularization added to `A` before iteration.
+For partial-trace channel outputs `N(σ) = Tr_Ā(σ)` that may be
+rank-deficient, `ε = 1e-6` to `1e-8` is a good default — large enough
+to stabilize the iteration, small enough to leave the recovery error
+essentially unchanged on full-rank inputs.
+"""
+function denman_beavers(A::AbstractMatrix; ε::Real = 1e-8, max_iter::Int = 30,
+                        tol::Real = 1e-12)
+    Ah = (A + A') / 2 + ε * I
+    n = size(Ah, 1)
+    T = eltype(Ah)
+    Y = Matrix{T}(Ah)
+    Z = Matrix{T}(I, n, n)
+    for _ in 1:max_iter
+        Y_next = (Y + inv(Z)) / 2
+        Z_next = (Z + inv(Y)) / 2
+        # Convergence: when Y² ≈ A, the iteration has converged.
+        if norm(Y_next * Y_next - Ah) < tol
+            return Y_next, Z_next
+        end
+        Y = Y_next
+        Z = Z_next
+    end
+    return Y, Z
+end
+
+"""
+    matrix_sqrt_smooth(M; ε=1e-8, max_iter=30) -> Matrix
+
+ForwardDiff-compatible Hermitian square root via Denman–Beavers.
+Equivalent to `sqrt(M + εI)` but computed without `eigen`.
+"""
+matrix_sqrt_smooth(M::AbstractMatrix; ε::Real = 1e-8, max_iter::Int = 30) =
+    denman_beavers(M; ε = ε, max_iter = max_iter)[1]
+
+"""
+    matrix_inv_sqrt_smooth(M; ε=1e-8, max_iter=30) -> Matrix
+
+ForwardDiff-compatible inverse Hermitian square root via Denman–Beavers.
+Equivalent to `(M + εI)^{-1/2}` but computed without `eigen`. This is
+the workhorse for the M5 Petz objective evaluated inside Piccolo's
+gradient pipeline.
+"""
+matrix_inv_sqrt_smooth(M::AbstractMatrix; ε::Real = 1e-8, max_iter::Int = 30) =
+    denman_beavers(M; ε = ε, max_iter = max_iter)[2]
+
+# --------------------------------------------------------------------------- #
 # Petz recovery map
 # --------------------------------------------------------------------------- #
 
@@ -234,6 +310,56 @@ function petz_recovery_error(
     @inbounds for i in 1:d_bulk, j in 1:d_bulk
         ρ_bulk = zeros(ComplexF64, d_bulk, d_bulk)
         ρ_bulk[i, j] = 1
+        ρ_full = V * ρ_bulk * V'
+        ρ_A = partial_trace(ρ_full, A, n_bdy)
+        inner_A = σ_A_inv_half * ρ_A * σ_A_inv_half
+        ρ_rec_full = σ_half * embed_operator(inner_A, A, n_bdy) * σ_half
+        C_ij = V' * ρ_rec_full * V
+        F_ent += C_ij[i, j]
+    end
+    F_ent /= d_bulk^2
+    return 1 - real(F_ent)
+end
+
+"""
+    petz_recovery_error_smooth(V, A; ε=1e-8, max_iter=30) -> Real
+
+ForwardDiff-compatible variant of [`petz_recovery_error`](@ref) that uses
+the Denman–Beavers smooth inverse square root in place of the eigen-based
+hard-cutoff version. Suitable for use inside a `TerminalObjective`
+(Piccolo's gradient pipeline through `ForwardDiff`).
+
+The Tikhonov `ε` adds a tiny positive regularization to `N(σ)` and `σ`
+before computing their square roots. For full-rank inputs the result
+matches [`petz_recovery_error`](@ref) to `O(ε)`. For rank-deficient
+inputs (typical for `N(σ)` with non-full-support codes) the smooth
+version stays finite while the hard-cutoff version drops to zero on the
+deficient eigendirections.
+
+Returns the entanglement infidelity `1 - F_ent(R ∘ N, id)` as a real
+scalar of the same type as `eltype(V)` (so a `Dual` if `V` is a `Dual`-
+typed matrix during ForwardDiff tracing).
+"""
+function petz_recovery_error_smooth(
+    V::AbstractMatrix,
+    A::AbstractVector{Int};
+    ε::Real = 1e-8,
+    max_iter::Int = 30,
+)
+    d_bdy_full, d_bulk = size(V)
+    n_bdy = Int(log2(d_bdy_full))
+    1 << n_bdy == d_bdy_full || error("size(V, 1) must be a power of 2; got $d_bdy_full")
+
+    σ_full = (V * V') / d_bulk
+    σ_half        = matrix_sqrt_smooth(σ_full;      ε = ε, max_iter = max_iter)
+    σ_A           = partial_trace(σ_full, A, n_bdy)
+    σ_A_inv_half  = matrix_inv_sqrt_smooth(σ_A;     ε = ε, max_iter = max_iter)
+
+    T = eltype(V)
+    F_ent = zero(complex(real(T)))
+    @inbounds for i in 1:d_bulk, j in 1:d_bulk
+        ρ_bulk = zeros(T, d_bulk, d_bulk)
+        ρ_bulk[i, j] = one(T)
         ρ_full = V * ρ_bulk * V'
         ρ_A = partial_trace(ρ_full, A, n_bdy)
         inner_A = σ_A_inv_half * ρ_A * σ_A_inv_half
