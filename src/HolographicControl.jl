@@ -85,6 +85,7 @@ export single_pentagon_isometry, two_pentagon_isometry
 
 # --- io.jl ---
 export save_isometry, load_isometry
+export save_pulse, load_pulse
 
 # --- problems.jl (Piccolo-dependent) ---
 export isometry_synthesis_problem, isometry_synthesis_problem_cubic

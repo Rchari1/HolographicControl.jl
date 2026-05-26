@@ -74,3 +74,58 @@ end
         @test eltype(V_loaded) == ComplexF64
     end
 end
+
+# ============================================================================ #
+# Pulse save/load
+# ============================================================================ #
+
+@testset "save_pulse / load_pulse — ZeroOrder-style (no derivatives)" begin
+    mktempdir() do tmpdir
+        n_drives, n_knots = 6, 25
+        controls = randn(n_drives, n_knots)
+        times = collect(range(0.0, 10.0; length = n_knots))
+        path = joinpath(tmpdir, "pulse_zoh")
+        save_pulse(path, controls, times; meta = Dict(:gate => "X"))
+
+        c, t, d, m = load_pulse(path)
+        @test c == controls
+        @test t == times
+        @test d === nothing                  # ZeroOrderPulse → no tangents
+        @test m[:gate] == "X"
+    end
+end
+
+@testset "save_pulse / load_pulse — CubicSpline-style (with derivatives)" begin
+    mktempdir() do tmpdir
+        n_drives, n_knots = 10, 15
+        controls    = randn(n_drives, n_knots)
+        derivatives = randn(n_drives, n_knots)
+        times       = collect(range(0.0, 10.0; length = n_knots))
+        path = joinpath(tmpdir, "pulse_cubic")
+        save_pulse(path, controls, times; derivatives = derivatives)
+
+        c, t, d, m = load_pulse(path)
+        @test c == controls
+        @test d == derivatives
+        @test t == times
+        @test isempty(m)
+    end
+end
+
+@testset "save_pulse — input validation" begin
+    mktempdir() do tmpdir
+        path = joinpath(tmpdir, "bad")
+        # times length doesn't match controls knots
+        @test_throws ErrorException save_pulse(path, randn(6, 25), collect(1.0:10.0))
+        # derivatives shape doesn't match controls
+        @test_throws ErrorException save_pulse(
+            path, randn(6, 25), collect(range(0.0, 1.0; length=25));
+            derivatives = randn(6, 20))
+    end
+end
+
+@testset "load_pulse — missing file errors" begin
+    mktempdir() do tmpdir
+        @test_throws ErrorException load_pulse(joinpath(tmpdir, "nope"))
+    end
+end
