@@ -18,10 +18,7 @@ dynamically** — as the output of a physical Hamiltonian evolution
 under bounded controls — and to **discover new approximate codes** by
 optimizing the Petz recovery error directly.
 
-> Master's thesis software, developed under Jonathan Bain at NYU
-> Tandon. Status: M0–M4 milestones complete + working; M5 (the novel
-> contribution) Layers 1–2 done, Layer 3 (Piccolo integration)
-> designed and pending.
+> Master's thesis, NYU
 
 ---
 
@@ -164,4 +161,4 @@ HaPPY paper (`arXiv:1503.06237`) and the Piccolo.jl repository.
 
 ## License
 
-MIT (matching Piccolo.jl).
+MIT
