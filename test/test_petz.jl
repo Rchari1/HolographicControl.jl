@@ -102,3 +102,76 @@ end
         @test petz_recovery_error(V, A) ≈ depolarizing_err atol=1e-10
     end
 end
+
+# ============================================================================ #
+# Smooth (AD-compatible) variant via Denman–Beavers — the M5 Layer 3 path
+# ============================================================================ #
+
+@testset "denman_beavers — sqrt and inv_sqrt" begin
+    # Diagonal PSD case (closed form)
+    D = Diagonal([4.0, 1.0, 0.25])
+    sqrt_D, inv_sqrt_D = denman_beavers(Matrix(D); ε=0.0, max_iter=30)
+    @test sqrt_D ≈ Diagonal([2.0, 1.0, 0.5]) atol=1e-8
+    @test inv_sqrt_D ≈ Diagonal([0.5, 1.0, 2.0]) atol=1e-8
+
+    # Round-trip: sqrt(A)² ≈ A and sqrt(A) · inv_sqrt(A) ≈ I
+    A = randn(ComplexF64, 4, 4); A = A * A' + 0.5 * I       # positive definite
+    sqrtA, invsqrtA = denman_beavers(A; ε=1e-10)
+    @test sqrtA * sqrtA ≈ A atol=1e-7
+    @test sqrtA * invsqrtA ≈ I atol=1e-7
+end
+
+@testset "matrix_(inv_)sqrt_smooth match eigen path on full-rank inputs" begin
+    A = randn(ComplexF64, 5, 5); A = A * A' + 0.5 * I
+    @test matrix_sqrt_smooth(A; ε=1e-10) ≈ matrix_sqrt(A; cutoff=1e-12) atol=1e-6
+    @test matrix_inv_sqrt_smooth(A; ε=1e-10) ≈ matrix_inv_sqrt(A; cutoff=1e-12) atol=1e-5
+end
+
+@testset "petz_recovery_error_smooth matches eigen-path on [[5,1,3]]" begin
+    V = five_qubit_isometry()
+    # Correctable subregions: both methods should give ~0
+    for q in 1:5
+        A = collect(setdiff(1:5, [q]))
+        @test petz_recovery_error_smooth(V, A; ε=1e-8) < 1e-6
+    end
+    # Depolarizing case (3 erasures): both give 1 - 1/d_bulk² = 0.75
+    for a in 1:5, b in (a+1):5
+        A = [a, b]
+        @test petz_recovery_error_smooth(V, A; ε=1e-8) ≈ 0.75 atol=1e-4
+    end
+end
+
+@testset "petz_recovery_objective_smooth — basic" begin
+    V = five_qubit_isometry()
+    A_list = uniform_erasure_subregions(5, 1)
+    obj = petz_recovery_objective_smooth(V; A_list=A_list, ε=1e-8)
+    @test obj ≥ 0
+    @test obj < 1e-5
+end
+
+@testset "ForwardDiff through petz_recovery_objective_smooth (the M5 plumbing)" begin
+    using ForwardDiff
+    n_bdy = 3; d_bdy = 8; d_bulk = 2
+    A_list = uniform_erasure_subregions(n_bdy, 1)
+
+    function obj(x)
+        n = d_bdy * d_bulk
+        M_re = reshape(x[1:n], d_bdy, d_bulk)
+        M_im = reshape(x[n+1:end], d_bdy, d_bulk)
+        M = complex.(M_re, M_im)
+        G = Hermitian(M' * M + 1e-8 * I)
+        V = M * matrix_inv_sqrt_smooth(G; ε=1e-10)
+        return petz_recovery_objective_smooth(V; A_list=A_list, ε=1e-6)
+    end
+
+    x0 = randn(2 * d_bdy * d_bulk)
+    # Forward eval is finite
+    f0 = obj(x0)
+    @test isfinite(f0)
+    @test f0 ≥ 0
+
+    # Gradient via ForwardDiff produces a finite, full-length vector
+    g = ForwardDiff.gradient(obj, x0)
+    @test all(isfinite, g)
+    @test length(g) == 2 * d_bdy * d_bulk
+end
