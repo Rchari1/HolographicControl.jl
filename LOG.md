@@ -296,32 +296,105 @@ target QOC and discovery-objective QOC give qualitatively different
 answers, and discovery is the right framework for QEC** at scales where
 no perfect analytic code exists.
 
-### Layer 3 — Piccolo integration (designed, not implemented)
+### Layer 3 — Piccolo integration (n=3 PASSING, n=5 in progress)
 
-See `docs/M5_DESIGN.md` for the full design document. Four
-sub-problems identified:
+See `docs/M5_DESIGN.md` for the full design document. The four
+sub-problems from the design have all been resolved:
 
-- **A. Custom objective.** Replace `_state_objective` with a terminal
-  cost that assembles `V_opt` from final iso-vec states and evaluates
-  `petz_recovery_objective`. Likely a monkey-patch on `SmoothPulseProblem`
-  or a drop to `DirectTrajOpt.jl` per HANDOFF §M5.
-- **B. Differentiability.** `matrix_inv_sqrt` uses `eigen(Hermitian(·))`
-  with a hard cutoff — not natively ForwardDiff-friendly through exact
-  Hessian. Options: smooth Tikhonov regularization, custom adjoints, or
-  L-BFGS only. Start with L-BFGS only.
-- **C. Initial conditions.** Cold start unlikely to succeed at n=5;
-  warm-start from M4's converged pulse or curriculum-optimize from
-  fixed-target to Petz objective.
-- **D. Choice of A_list.** Physics design — uniform single-qubit
-  erasures (smallest meaningful), holographic-biased (larger subregions
-  weighted more), or sampled. Coordinate with thesis advisor on the
-  formulation that best supports the holographic-codes interpretation.
+- **A. Custom objective — RESOLVED.** Sub-problem A's "monkey-patch
+  `SmoothPulseProblem`" path turned out to be the right one: build the
+  problem with `Q = 0` (zero-weight the fixed-target fidelity term) and
+  add the Petz aggregate as a `TerminalObjective` (a DirectTrajOpt
+  `KnotPointObjective` evaluated only at the final knot, which is what
+  `TerminalObjective(f, names, traj; Q)` produces). The dummy `V_target`
+  is just a random isometry whose columns serve as Piccolo's required
+  `goals`; with `Q = 0` the optimizer ignores them.
+
+- **B. Differentiability — RESOLVED.** Confirmed empirically that
+  `eigen!` has no method for `Hermitian{Complex{Dual}}`, so the
+  eigen-based `matrix_inv_sqrt` fails under ForwardDiff. Replaced with
+  **Denman–Beavers iteration** in `src/recovery.jl`:
+
+  ```
+  Y_0 = A,    Z_0 = I
+  Y_{k+1} = (Y_k + Z_k^{-1}) / 2
+  Z_{k+1} = (Z_k + Y_k^{-1}) / 2
+  ```
+
+  Pure matrix arithmetic (no `eigen`), quadratic convergence,
+  ForwardDiff-traceable for both gradient and Hessian. Tikhonov
+  `ε = 1e-6` to `1e-8` keeps `A` strictly positive definite. The
+  `matrix_(inv_)sqrt_smooth` wrappers and `petz_recovery_error_smooth`
+  / `petz_recovery_objective_smooth` use this internally.
+
+- **C. Initial conditions — partially resolved.** n=3 succeeded from
+  cold start; n=5 cold start in progress. If n=5 cold start fails or
+  stagnates, warm-start from M4's converged [[5,1,3]] pulse is the
+  next escalation (the pulse save/load was added in this branch
+  exactly for this).
+
+- **D. A_list choice — first implementation: uniform weight-1.** Other
+  weightings (holographic-biased, sampled) can be plugged in later via
+  the `A_list` and `weights` arguments to
+  `petz_isometry_synthesis_problem`.
+
+### Layer 3 — n=3 result (the M3→M5 contrast at the pulse level)
+
+`examples/05e_piccolo_m5_n3.jl` runs the M5 Layer 3 builder on the same
+physical system as M3 (XY drift, single-site X,Y controls, |u|≤1.0,
+T=25, duration=10.0) with the uniform weight-1 erasure objective. Cold
+start, two-phase solve (200 L-BFGS + 30 exact Hessian):
+
+| Metric | Value |
+|---|---|
+| Phase 2 NLP Petz | 0.066958 |
+| Rollout Petz | 0.066988 |
+| NLP-rollout gap | 3.0e-5 |
+| Constraint violation | 3.4e-5 |
+| Per-erasure breakdown | 0.067 each (symmetric) |
+| Wall time | 5.5 min |
+
+**The thesis novelty in one experiment.** On the same physical
+hardware, M3 (Piccolo synthesizing the repetition code) achieves Petz
+objective 0.500 — a classical code. M5 (Piccolo with the Petz
+objective directly) achieves 0.067 — a fundamentally different and
+**7.5× better quantum code**. Same drift, same controls, same bounds,
+same T, same duration; different optimization objective. Both are
+physically realizable pulses on a 3-qubit chain.
+
+The discovered code's structure (all three per-erasure errors equal to
+0.067 within rounding) matches the standalone manifold optimum from
+`examples/05b_petz_optimization_demo.jl`. So the Piccolo M5 solve is
+finding the same code-equivalence class via physical Hamiltonian
+dynamics that the standalone optimizer finds in abstract isometry
+space — confirming the M5 framework end-to-end.
+
+### Layer 3 — n=5 result (in progress)
+
+`examples/05f_piccolo_m5_n5.jl` runs the M5 Layer 3 builder on the
+M4-scale system (5Q, XY drift, single-site X,Y, |u|≤1.0, T=25,
+seed=3). The expected outcome is one of two scientifically
+interesting branches:
+
+1. **Reproduces M4.** Discovered code has `code_subspace_fidelity` ≈ 1
+   to V_513 — M5 doesn't degrade compared to fixed-target M4 when a
+   perfect code exists. Sanity-check result.
+
+2. **Discovers a different low-Petz code.** Discovered code has Petz
+   ≈ 0 but `code_subspace_fidelity` < 1 to V_513 — the **manifold
+   observation** under physical Hamiltonian constraints. This would
+   be the strongest thesis result so far: a NEW physical encoding
+   with the same QEC properties as [[5,1,3]].
+
+Either branch is publishable; the second is more striking. (Result
+will be appended to this entry once the run completes.)
 
 ### Cost note
 
-Per M4 numbers, a Piccolo Phase 2 solve on (5 qubits, 10 drives, T=25)
-is ~4 hours; each M5 objective evaluation costs ~5× more than M4 due to
-the per-erasure Petz computations. So a single M5 solve at this size is
-~10-20 hours, and multistart on top is several days of compute. The
-laptop will exercise the toolchain on (n_bdy=3); thesis-scale runs want
-a cluster.
+Per M4 numbers and the n=3 Layer 3 run, single-thread Piccolo + Petz
+exact-Hessian Phase 2 cost scales steeply: each Hessian eval is
+ForwardDiff-twice through `expv` (the dynamics integrator) AND
+through Denman–Beavers (the Petz inverse sqrt). At n=3, ~10 s/iter;
+at n=5 expect ~5-30 min/iter (still bounded but laptop-only at this
+scale). Multistart and 8+ qubit (multi-pentagon HaPPY) runs want a
+cluster.
