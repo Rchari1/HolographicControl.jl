@@ -369,25 +369,56 @@ finding the same code-equivalence class via physical Hamiltonian
 dynamics that the standalone optimizer finds in abstract isometry
 space — confirming the M5 framework end-to-end.
 
-### Layer 3 — n=5 result (in progress)
+### Layer 3 — n=5: monolithic run is compute-bound (negative result)
 
-`examples/05f_piccolo_m5_n5.jl` runs the M5 Layer 3 builder on the
-M4-scale system (5Q, XY drift, single-site X,Y, |u|≤1.0, T=25,
-seed=3). The expected outcome is one of two scientifically
-interesting branches:
+`examples/05f_piccolo_m5_n5.jl` runs the monolithic M5 Layer 3 builder
+(Petz objective directly inside Piccolo) on the M4-scale system. Across
+three attempts the verdict is: **monolithic M5 does not scale to n=5 on
+a laptop.**
 
-1. **Reproduces M4.** Discovered code has `code_subspace_fidelity` ≈ 1
-   to V_513 — M5 doesn't degrade compared to fixed-target M4 when a
-   perfect code exists. Sanity-check result.
+- Phase 1 (L-BFGS) reaches rollout Petz ≈ 0.033 but does NOT converge —
+  per-erasure errors stay asymmetric (0.009–0.059), barely better than a
+  random isometry (0.043). At n=3, Phase 2 rescued exactly this; at n=5
+  it cannot.
+- Phase 2 (exact Hessian) is **intractable**: a single Hessian evaluation
+  ran > 6 hours without completing. The Lagrangian Hessian needs
+  ForwardDiff differentiated twice through both the dynamics `expv` and
+  the Petz objective's Denman–Beavers inverse-sqrt, over ~3851 NLP
+  variables.
+- (Two earlier attempts also died after Phase 1 — first the laptop slept
+  killing the process, then an import bug in the checkpoint code. Both
+  fixed; the third run confirmed the Hessian wall.)
 
-2. **Discovers a different low-Petz code.** Discovered code has Petz
-   ≈ 0 but `code_subspace_fidelity` < 1 to V_513 — the **manifold
-   observation** under physical Hamiltonian constraints. This would
-   be the strongest thesis result so far: a NEW physical encoding
-   with the same QEC properties as [[5,1,3]].
+This pins the laptop-feasible frontier for monolithic M5 at n=3.
 
-Either branch is publishable; the second is more striking. (Result
-will be appended to this entry once the run completes.)
+### Layer 3 — n=5 SOLVED via decomposition (the manifold result)
+
+`examples/07_decomposed_m5_n5.jl` resolves the n=5 case by splitting the
+problem into two cheap halves instead of one intractable NLP:
+
+- **Stage A — discovery (159 s).** Optimize the Petz objective over the
+  isometry manifold directly (gradient-free coordinate descent, no
+  physical dynamics). Found V* with:
+  - Petz objective **6.8e-10** (perfect single-qubit-erasure recovery,
+    per-erasure all ~1e-9, symmetric ⇒ properly converged)
+  - `code_subspace_fidelity(V_513, V*) = 0.084` — **essentially
+    orthogonal to the [[5,1,3]]**.
+- **Stage B — realization (M4 cost).** Physically synthesize V* with the
+  fixed-target `isometry_synthesis_problem` (standard ket-fidelity
+  objective ⇒ cheap Hessian — this is exactly the M4 solve that
+  converged in ~4 h, NOT the intractable Petz-in-Piccolo Hessian).
+
+**The manifold observation, confirmed at n=5 and made physical:** there
+exists a genuinely different distance-3-erasure-correcting code than the
+textbook [[5,1,3]] (code-subspace fidelity 0.08), with identical perfect
+recovery, found by discovery-driven optimization in 159 s. The earlier
+standalone hint (`examples/05c`) is now a clean, reproducible n=5 result.
+
+**Methodological takeaway (worth the thesis):** objective-driven code
+synthesis should DECOMPOSE into cheap abstract discovery (what code?) +
+expensive but solved fixed-target realization (what pulse?). Coupling
+them in one NLP (monolithic M5) pays the worst of both costs. The
+decomposition is the scalable architecture.
 
 ### Cost note
 
