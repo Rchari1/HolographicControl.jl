@@ -25,6 +25,7 @@ src/
 ├── hamiltonians.jl           drift Hamiltonians, single-site drive matrices
 ├── recovery.jl               partial trace, embed, Petz map, recovery error
 ├── objectives.jl             Petz recovery objective + A_list constructors
+├── black_hole.jl             Page curve / page time / Hayden–Preskill framing
 ├── problems.jl               Piccolo SmoothPulseProblem builders (M3/M4 path)
 ├── io.jl                     save_isometry / load_isometry
 └── reference_codes/
@@ -47,6 +48,7 @@ include("hamiltonians.jl")
 include("recovery.jl")
 include("objectives.jl")
 include("entanglement.jl")
+include("black_hole.jl")
 include("reference_codes/five_qubit_code.jl")
 include("reference_codes/repetition_code.jl")
 include("reference_codes/happy_pentagon.jl")
@@ -82,6 +84,10 @@ export uniform_erasure_subregions, erasure_subregions_up_to
 # --- entanglement.jl ---
 export entanglement_entropy, renyi_entropy, mutual_information
 export is_reconstructable, reconstruction_threshold, entanglement_wedge_report
+
+# --- black_hole.jl ---
+export page_curve, page_time, hayden_preskill_recoverable
+export holographic_weighted_subregions
 
 # --- reference codes ---
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants
