@@ -420,6 +420,40 @@ expensive but solved fixed-target realization (what pulse?). Coupling
 them in one NLP (monolithic M5) pays the worst of both costs. The
 decomposition is the scalable architecture.
 
+### Layer 3 — n=5 Stage B realization result
+
+Ran `examples/07_decomposed_m5_n5.jl --realize` (Stage A discovery +
+Stage B physical synthesis of V*, XY drift + seed=3, Phase 1 200 L-BFGS +
+Phase 2 30 exact-Hessian, ~4.1 h wall). The physically-synthesized code:
+
+| Metric | Value |
+|---|---|
+| Petz objective (realized code) | **0.00233** |
+| Per-erasure recovery error | all 0.0018–0.0032 |
+| `code_subspace_fidelity` to V* | 0.966 |
+| `code_subspace_fidelity` to [[5,1,3]] | **0.082** |
+| ‖V'V − I‖ (valid isometry) | 1.7e-5 |
+
+**Result: a new, physically-realizable, near-perfect distance-3-erasure
+code on a 5-qubit chain that is inequivalent to the textbook [[5,1,3]].**
+Synthesized by bounded single-site X,Y pulses; recovery error 0.0023
+(18× better than a random isometry's 0.043; the code stays ~orthogonal to
+the [[5,1,3]] at fidelity 0.082).
+
+The realization is near-perfect but not exact: the fixed-target solve
+converged to fidelity 0.966 to V* (not > 0.99), and during synthesis the
+code drifted slightly to a NEARBY low-Petz code (Petz 0.0023 rather than
+V*'s 7e-10) — itself another instance of the low-Petz manifold. Closing
+the last gap to > 0.99 would need the same seed sweep that M4 required to
+push [[5,1,3]] from 0.94 to 0.999 (the seed=3 used here was tuned for
+[[5,1,3]], not for V*); that is ~4 h × K seeds and left as the obvious
+next step.
+
+Artifacts (all in `data/`): `m5_n5_Vstar_standalone.jls` (the discovered
+V*), `m5_n5_Vstar_realized_phase{1,2}.jls` (the synthesized code + its
+Phase-1 checkpoint), plus the Phase-1 pulse for warm-restarting a seed
+sweep.
+
 ### Cost note
 
 Per M4 numbers and the n=3 Layer 3 run, single-thread Piccolo + Petz
