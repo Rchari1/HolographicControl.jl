@@ -12,6 +12,9 @@ using HolographicControl
     include("test_petz.jl")
     include("test_objectives.jl")
 
+    # Black-hole / Page-curve diagnostics
+    include("test_black_hole.jl")
+
     # Reference codes
     include("test_five_qubit.jl")
     include("test_repetition.jl")
