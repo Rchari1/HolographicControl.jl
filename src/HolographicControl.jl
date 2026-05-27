@@ -46,6 +46,7 @@ include("isometries.jl")
 include("hamiltonians.jl")
 include("recovery.jl")
 include("objectives.jl")
+include("entanglement.jl")
 include("reference_codes/five_qubit_code.jl")
 include("reference_codes/repetition_code.jl")
 include("reference_codes/happy_pentagon.jl")
@@ -77,6 +78,10 @@ export petz_map, petz_recovery_error
 # --- objectives.jl ---
 export petz_recovery_objective
 export uniform_erasure_subregions, erasure_subregions_up_to
+
+# --- entanglement.jl ---
+export entanglement_entropy, renyi_entropy, mutual_information
+export is_reconstructable, reconstruction_threshold, entanglement_wedge_report
 
 # --- reference codes ---
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants

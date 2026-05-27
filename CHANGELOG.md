@@ -60,6 +60,32 @@ Versions are unreleased pre-thesis; we use commit hashes for now.
 - Before refactor: 59 tests
 - After refactor + expansion: **409 tests, all passing in ~62 s**
 
+## Unreleased — `feat/entanglement-structure`
+
+### Added
+
+- `src/entanglement.jl` — entanglement-structure / subregion-duality layer
+  connecting the Petz recovery machinery to AdS/CFT concepts:
+  `entanglement_entropy` (von Neumann S(A) of a pure or maximally-mixed
+  code state, `:logical`/`:mixed` convention, configurable `base` and
+  `bulk_state`), `renyi_entropy` (with α→1 von Neumann limit and α=0/∞
+  max/min-entropy cases), `mutual_information` I(A:B), `is_reconstructable`
+  (bulk-in-entanglement-wedge predicate via `petz_recovery_error`),
+  `reconstruction_threshold` (Page-time analog — min reconstructing region
+  size), and `entanglement_wedge_report` (per-size reconstructable-region
+  census as a NamedTuple).
+- `test/test_entanglement.jl` — analytic verification of the AME(5,2)
+  structure of [[5,1,3]]: S(A) = min(|A|, 5-|A|) bits, S(A)=S(complement),
+  flat Rényi spectrum (S_α = S for all α), subadditivity + strong
+  subadditivity, zero two-point mutual information (monogamy), the
+  reconstruction threshold = 3, the wedge census `[0,0,10,5,1]`, and the
+  GHZ/repetition-code contrast (I([1]:[2]) = 1 bit, trivial wedge).
+
+### Test suite
+
+- After this feature: **734 tests, all passing**
+  (409 prior + 325 new entanglement tests).
+
 ## Earlier history
 
 See `LOG.md` for the milestone-by-milestone development narrative
