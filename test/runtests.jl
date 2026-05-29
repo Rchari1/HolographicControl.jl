@@ -16,6 +16,7 @@ using HolographicControl
     include("test_five_qubit.jl")
     include("test_repetition.jl")
     include("test_happy_pentagon.jl")
+    include("test_more_codes.jl")
 
     # Piccolo problem builders (no actual solves)
     include("test_problems.jl")
