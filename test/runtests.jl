@@ -29,4 +29,8 @@ using HolographicControl
 
     # End-to-end synthesis (small Piccolo solve, a few seconds)
     include("test_synthesis.jl")
+
+    # Reusable optimization-control patterns (multistart, discovery,
+    # warm-start, curriculum)
+    include("test_optimization.jl")
 end

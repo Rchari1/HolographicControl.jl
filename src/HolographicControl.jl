@@ -28,6 +28,7 @@ src/
 ├── black_hole.jl             Page curve / page time / Hayden–Preskill framing
 ├── problems.jl               Piccolo SmoothPulseProblem builders (M3/M4 path)
 ├── io.jl                     save_isometry / load_isometry
+├── optimization.jl          multistart / discovery / warm-start / curriculum
 └── reference_codes/
     ├── five_qubit_code.jl    [[5,1,3]] perfect code + Knill–Laflamme
     ├── repetition_code.jl    3-qubit classical repetition encoder
@@ -58,6 +59,7 @@ include("reference_codes/four_one_two_code.jl")
 include("reference_codes/steane_code.jl")
 include("io.jl")
 include("problems.jl")
+include("optimization.jl")
 
 # ============================================================================ #
 # Public API
@@ -109,5 +111,9 @@ export save_pulse, load_pulse
 export isometry_synthesis_problem, isometry_synthesis_problem_cubic
 export petz_isometry_synthesis_problem
 export synthesized_isometry, rolled_out_isometry
+
+# --- optimization.jl (Piccolo-dependent) ---
+export multistart_synthesis, discover_low_petz_isometry
+export warm_start_pulse!, curriculum_solve!
 
 end # module
