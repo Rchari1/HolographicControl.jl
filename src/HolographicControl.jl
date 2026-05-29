@@ -26,6 +26,7 @@ src/
 ├── recovery.jl               partial trace, embed, Petz map, recovery error
 ├── objectives.jl             Petz recovery objective + A_list constructors
 ├── black_hole.jl             Page curve / page time / Hayden–Preskill framing
+├── holography.jl             RT weights, operator wedge, I(R:A), dashboard
 ├── problems.jl               Piccolo SmoothPulseProblem builders (M3/M4 path)
 ├── io.jl                     save_isometry / load_isometry
 ├── optimization.jl          multistart / discovery / warm-start / curriculum
@@ -52,6 +53,7 @@ include("recovery.jl")
 include("objectives.jl")
 include("entanglement.jl")
 include("black_hole.jl")
+include("holography.jl")
 include("reference_codes/five_qubit_code.jl")
 include("reference_codes/repetition_code.jl")
 include("reference_codes/happy_pentagon.jl")
@@ -95,6 +97,13 @@ export is_reconstructable, reconstruction_threshold, entanglement_wedge_report
 # --- black_hole.jl ---
 export page_curve, page_time, hayden_preskill_recoverable
 export holographic_weighted_subregions
+
+# --- holography.jl ---
+export all_proper_subregions, rt_minimal_surface_weights
+export bulk_operator_reconstructable
+export mutual_information_bulk_boundary
+export subregion_complement_purity
+export code_quality_summary
 
 # --- reference codes ---
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants

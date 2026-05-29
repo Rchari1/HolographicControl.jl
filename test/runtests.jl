@@ -18,6 +18,9 @@ using HolographicControl
     # Black-hole / Page-curve diagnostics
     include("test_black_hole.jl")
 
+    # Holographic extensions (RT weights, bulk-boundary MI, dashboard)
+    include("test_holography.jl")
+
     # Reference codes
     include("test_five_qubit.jl")
     include("test_repetition.jl")
