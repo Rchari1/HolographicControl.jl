@@ -31,7 +31,9 @@ src/
 └── reference_codes/
     ├── five_qubit_code.jl    [[5,1,3]] perfect code + Knill–Laflamme
     ├── repetition_code.jl    3-qubit classical repetition encoder
-    └── happy_pentagon.jl     single-tile alias + multi-tile stub
+    ├── happy_pentagon.jl     single-tile alias + multi-tile stub
+    ├── four_one_two_code.jl  [[4,1,2]] error-detecting code (Vaidman)
+    └── steane_code.jl        [[7,1,3]] Steane CSS code
 ```
 """
 module HolographicControl
@@ -52,6 +54,8 @@ include("black_hole.jl")
 include("reference_codes/five_qubit_code.jl")
 include("reference_codes/repetition_code.jl")
 include("reference_codes/happy_pentagon.jl")
+include("reference_codes/four_one_two_code.jl")
+include("reference_codes/steane_code.jl")
 include("io.jl")
 include("problems.jl")
 
@@ -94,6 +98,8 @@ export holographic_weighted_subregions
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants
 export three_qubit_repetition_isometry
 export single_pentagon_isometry, two_pentagon_isometry
+export four_one_two_isometry, four_one_two_stabilizers
+export steane_isometry, steane_stabilizers
 
 # --- io.jl ---
 export save_isometry, load_isometry
