@@ -28,4 +28,7 @@ using HolographicControl
 
     # End-to-end synthesis (small Piccolo solve, a few seconds)
     include("test_synthesis.jl")
+
+    # CairoMakie-based visualization layer (headless render check)
+    include("test_visualization.jl")
 end
