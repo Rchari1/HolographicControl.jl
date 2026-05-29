@@ -12,6 +12,12 @@ using HolographicControl
     include("test_petz.jl")
     include("test_objectives.jl")
 
+    # Entanglement structure / subregion duality
+    include("test_entanglement.jl")
+
+    # Black-hole / Page-curve diagnostics
+    include("test_black_hole.jl")
+
     # Reference codes
     include("test_five_qubit.jl")
     include("test_repetition.jl")
