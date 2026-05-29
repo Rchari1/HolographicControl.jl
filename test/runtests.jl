@@ -36,4 +36,7 @@ using HolographicControl
     # Reusable optimization-control patterns (multistart, discovery,
     # warm-start, curriculum)
     include("test_optimization.jl")
+
+    # CairoMakie-based visualization layer (headless render check)
+    include("test_visualization.jl")
 end
