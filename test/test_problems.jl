@@ -74,3 +74,62 @@ end
     # Each input state should live in 32-dim Hilbert space
     @test length(qcp.qtraj.initials[1]) == 32
 end
+
+# ============================================================================ #
+# petz_isometry_synthesis_problem — M5 Layer 3 problem builder
+# ============================================================================ #
+
+@testset "petz_isometry_synthesis_problem — input validation" begin
+    H_drift = nn_xx_yy_drift(3)
+    H_drives = single_qubit_xy_drives(3)
+    drive_bounds = fill(1.0, length(H_drives))
+    A_list = uniform_erasure_subregions(3, 1)
+
+    # H_drift shape mismatch
+    @test_throws ErrorException petz_isometry_synthesis_problem(
+        randn(ComplexF64, 4, 4), H_drives, drive_bounds;
+        n_bdy = 3, n_bulk = 1, A_list = A_list)
+
+    # length mismatch on drive_bounds
+    @test_throws ErrorException petz_isometry_synthesis_problem(
+        H_drift, H_drives, fill(1.0, length(H_drives) + 1);
+        n_bdy = 3, n_bulk = 1, A_list = A_list)
+
+    # empty A_list
+    @test_throws ErrorException petz_isometry_synthesis_problem(
+        H_drift, H_drives, drive_bounds;
+        n_bdy = 3, n_bulk = 1, A_list = Vector{Vector{Int}}())
+
+    # weights length mismatch
+    @test_throws ErrorException petz_isometry_synthesis_problem(
+        H_drift, H_drives, drive_bounds;
+        n_bdy = 3, n_bulk = 1, A_list = A_list, weights = [1.0])
+end
+
+@testset "petz_isometry_synthesis_problem — builds for 3Q system" begin
+    H_drift = nn_xx_yy_drift(3)
+    H_drives = single_qubit_xy_drives(3)
+    drive_bounds = fill(1.0, length(H_drives))
+    A_list = uniform_erasure_subregions(3, 1)
+
+    qcp = petz_isometry_synthesis_problem(
+        H_drift, H_drives, drive_bounds;
+        n_bdy = 3, n_bulk = 1,
+        A_list = A_list,
+        T = 20, duration = 5.0,
+        Q_petz = 100.0, ε_petz = 1e-6,
+        seed = 0,
+    )
+
+    @test qcp isa QuantumControlProblem
+
+    # The trajectory should expose ψ̃1 (and only one because n_bulk=1)
+    traj = get_trajectory(qcp)
+    @test :ψ̃1 ∈ traj.names
+    @test :u ∈ traj.names
+
+    # qcp.qtraj should be a MultiKetTrajectory with d_bulk = 2^1 = 2
+    @test length(qcp.qtraj.initials) == 2
+    @test length(qcp.qtraj.goals) == 2
+    @test length(qcp.qtraj.initials[1]) == 8     # 2^n_bdy
+end

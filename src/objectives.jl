@@ -64,6 +64,47 @@ function petz_recovery_objective(
     return total
 end
 
+"""
+    petz_recovery_objective_smooth(V; A_list, weights=nothing,
+                                    ε=1e-8, max_iter=30) -> Real
+
+ForwardDiff-compatible variant of [`petz_recovery_objective`](@ref).
+Uses [`petz_recovery_error_smooth`](@ref) internally so the entire
+computation goes through pure matrix arithmetic (no `eigen`), making
+the gradient/Hessian computable via `ForwardDiff`. This is the version
+plugged into Piccolo's `TerminalObjective` for the M5 Layer-3 solve.
+
+`ε` is the Tikhonov regularization for the matrix square roots; the
+default 1e-8 is small enough that full-rank inputs match the hard-cutoff
+version to ~`O(ε)`.
+"""
+function petz_recovery_objective_smooth(
+    V::AbstractMatrix;
+    A_list::AbstractVector{<:AbstractVector{Int}},
+    weights::Union{Nothing, AbstractVector{<:Real}} = nothing,
+    ε::Real = 1e-8,
+    max_iter::Int = 30,
+)
+    isempty(A_list) && error("A_list must contain at least one subregion")
+    w = if isnothing(weights)
+        fill(1.0 / length(A_list), length(A_list))
+    else
+        length(weights) == length(A_list) ||
+            error("weights length $(length(weights)) ≠ A_list length $(length(A_list))")
+        any(<(0), weights) && error("weights must be non-negative")
+        s = sum(weights)
+        s > 0 || error("weights must sum to a positive value")
+        weights ./ s
+    end
+
+    T = real(eltype(V))
+    total = zero(T)
+    @inbounds for (i, A) in pairs(A_list)
+        total += w[i] * petz_recovery_error_smooth(V, A; ε = ε, max_iter = max_iter)
+    end
+    return total
+end
+
 # --------------------------------------------------------------------------- #
 # Convenience constructors for A_list
 # --------------------------------------------------------------------------- #

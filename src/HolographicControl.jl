@@ -25,12 +25,18 @@ src/
 ├── hamiltonians.jl           drift Hamiltonians, single-site drive matrices
 ├── recovery.jl               partial trace, embed, Petz map, recovery error
 ├── objectives.jl             Petz recovery objective + A_list constructors
+├── black_hole.jl             Page curve / page time / Hayden–Preskill framing
+├── holography.jl             RT weights, operator wedge, I(R:A), dashboard
 ├── problems.jl               Piccolo SmoothPulseProblem builders (M3/M4 path)
 ├── io.jl                     save_isometry / load_isometry
+├── optimization.jl          multistart / discovery / warm-start / curriculum
+├── visualization.jl         CairoMakie plotters (thesis figures)
 └── reference_codes/
     ├── five_qubit_code.jl    [[5,1,3]] perfect code + Knill–Laflamme
     ├── repetition_code.jl    3-qubit classical repetition encoder
-    └── happy_pentagon.jl     single-tile alias + multi-tile stub
+    ├── happy_pentagon.jl     single-tile alias + multi-tile stub
+    ├── four_one_two_code.jl  [[4,1,2]] error-detecting code (Vaidman)
+    └── steane_code.jl        [[7,1,3]] Steane CSS code
 ```
 """
 module HolographicControl
@@ -46,11 +52,18 @@ include("isometries.jl")
 include("hamiltonians.jl")
 include("recovery.jl")
 include("objectives.jl")
+include("entanglement.jl")
+include("black_hole.jl")
+include("holography.jl")
 include("reference_codes/five_qubit_code.jl")
 include("reference_codes/repetition_code.jl")
 include("reference_codes/happy_pentagon.jl")
+include("reference_codes/four_one_two_code.jl")
+include("reference_codes/steane_code.jl")
 include("io.jl")
 include("problems.jl")
+include("optimization.jl")
+include("visualization.jl")
 
 # ============================================================================ #
 # Public API
@@ -72,16 +85,34 @@ export single_qubit_x_drives, single_qubit_xy_drives, single_qubit_xyz_drives
 # --- recovery.jl ---
 export partial_trace, embed_operator
 export hermitian_function, matrix_sqrt, matrix_inv_sqrt
-export petz_map, petz_recovery_error
+export denman_beavers, matrix_sqrt_smooth, matrix_inv_sqrt_smooth
+export petz_map, petz_recovery_error, petz_recovery_error_smooth
 
 # --- objectives.jl ---
-export petz_recovery_objective
+export petz_recovery_objective, petz_recovery_objective_smooth
 export uniform_erasure_subregions, erasure_subregions_up_to
+
+# --- entanglement.jl ---
+export entanglement_entropy, renyi_entropy, mutual_information
+export is_reconstructable, reconstruction_threshold, entanglement_wedge_report
+
+# --- black_hole.jl ---
+export page_curve, page_time, hayden_preskill_recoverable
+export holographic_weighted_subregions
+
+# --- holography.jl ---
+export all_proper_subregions, rt_minimal_surface_weights
+export bulk_operator_reconstructable
+export mutual_information_bulk_boundary
+export subregion_complement_purity
+export code_quality_summary
 
 # --- reference codes ---
 export five_qubit_isometry, five_qubit_stabilizers, knill_laflamme_constants
 export three_qubit_repetition_isometry
 export single_pentagon_isometry, two_pentagon_isometry
+export four_one_two_isometry, four_one_two_stabilizers
+export steane_isometry, steane_stabilizers
 
 # --- io.jl ---
 export save_isometry, load_isometry
@@ -89,6 +120,15 @@ export save_pulse, load_pulse
 
 # --- problems.jl (Piccolo-dependent) ---
 export isometry_synthesis_problem, isometry_synthesis_problem_cubic
+export petz_isometry_synthesis_problem
 export synthesized_isometry, rolled_out_isometry
+
+# --- optimization.jl (Piccolo-dependent) ---
+export multistart_synthesis, discover_low_petz_isometry
+export warm_start_pulse!, curriculum_solve!
+
+# --- visualization.jl (CairoMakie-based plotters) ---
+export plot_pulse, plot_page_curve, plot_entanglement_wedge
+export plot_petz_sweep, plot_code_comparison
 
 end # module

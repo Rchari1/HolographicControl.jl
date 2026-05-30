@@ -55,10 +55,64 @@ Versions are unreleased pre-thesis; we use commit hashes for now.
   homes. The `isometry_synthesis_problem_cubic` documented-broken
   warning is preserved verbatim.
 
+### M5 Layer 3 — Piccolo + Petz objective
+
+- `src/recovery.jl` — added `denman_beavers(A; ε, max_iter)` (pure-matrix-
+  arithmetic sqrt / inv-sqrt iteration) and its wrappers
+  `matrix_sqrt_smooth` / `matrix_inv_sqrt_smooth`. Used by the M5
+  objective to get ForwardDiff-traceable gradients and Hessians
+  (eigen-based path doesn't work for `Hermitian{Complex{Dual}}`).
+- `src/recovery.jl` — `petz_recovery_error_smooth(V, A; ε, max_iter)`.
+- `src/objectives.jl` — `petz_recovery_objective_smooth(V; A_list,
+  weights, ε, max_iter)`. The function plugged into Piccolo's
+  `TerminalObjective`.
+- `src/problems.jl` — **`petz_isometry_synthesis_problem(H_drift,
+  H_drives, drive_bounds; n_bdy, n_bulk, A_list, ...)`**. Builds a
+  Piccolo problem with the Petz aggregate as the objective instead of
+  phase-coherent fidelity to a fixed target. Strategy: wraps
+  `isometry_synthesis_problem` with `Q = 0` (zero-weight the standard
+  term) and adds the Petz aggregate as a `TerminalObjective`.
+- `examples/05e_piccolo_m5_n3.jl` — n=3 demonstration: on the same
+  physical system as M3, Piccolo with the Petz objective reaches Petz
+  0.067 (7.5× lower than M3's repetition-code target's 0.500).
+- `examples/05f_piccolo_m5_n5.jl` — n=5 overnight experiment: the
+  thesis-scale M5 Layer 3 run, asks whether Piccolo with Petz finds
+  the [[5,1,3]] or a different equivalent code.
+- `Project.toml` — `ForwardDiff` added to `[deps]` (needed for the
+  smooth Petz gradient/Hessian path).
+
 ### Test suite
 
 - Before refactor: 59 tests
-- After refactor + expansion: **409 tests, all passing in ~62 s**
+- After refactor + expansion: 409 tests
+- After M5 Layer 3 + tests for the smooth-Petz path: **446 tests,
+  all passing in ~89 s**
+
+## Unreleased — `feat/entanglement-structure`
+
+### Added
+
+- `src/entanglement.jl` — entanglement-structure / subregion-duality layer
+  connecting the Petz recovery machinery to AdS/CFT concepts:
+  `entanglement_entropy` (von Neumann S(A) of a pure or maximally-mixed
+  code state, `:logical`/`:mixed` convention, configurable `base` and
+  `bulk_state`), `renyi_entropy` (with α→1 von Neumann limit and α=0/∞
+  max/min-entropy cases), `mutual_information` I(A:B), `is_reconstructable`
+  (bulk-in-entanglement-wedge predicate via `petz_recovery_error`),
+  `reconstruction_threshold` (Page-time analog — min reconstructing region
+  size), and `entanglement_wedge_report` (per-size reconstructable-region
+  census as a NamedTuple).
+- `test/test_entanglement.jl` — analytic verification of the AME(5,2)
+  structure of [[5,1,3]]: S(A) = min(|A|, 5-|A|) bits, S(A)=S(complement),
+  flat Rényi spectrum (S_α = S for all α), subadditivity + strong
+  subadditivity, zero two-point mutual information (monogamy), the
+  reconstruction threshold = 3, the wedge census `[0,0,10,5,1]`, and the
+  GHZ/repetition-code contrast (I([1]:[2]) = 1 bit, trivial wedge).
+
+### Test suite
+
+- After this feature: **734 tests, all passing**
+  (409 prior + 325 new entanglement tests).
 
 ## Earlier history
 
