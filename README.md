@@ -64,11 +64,18 @@ Expect ~4 hours wall on a laptop. The script prints rolled-out fidelity
 | `hamiltonians.jl` | Drift Hamiltonians (`nn_xx_yy_drift`, `nn_heisenberg_drift`, etc.) + single-site drive matrices |
 | `recovery.jl` | Partial trace, embed (HS-adjoint), Petz map, recovery error |
 | `objectives.jl` | `petz_recovery_objective` + A_list constructors |
+| `entanglement.jl` | Entropies, mutual information, `is_reconstructable`, `entanglement_wedge_report` |
+| `black_hole.jl` | `page_curve`, `page_time`, Hayden–Preskill recoverability |
+| `holography.jl` | RT minimal-surface weights, bulk–boundary MI, `code_quality_summary` |
+| `optimization.jl` | `discover_low_petz_isometry` (Stage A), multistart, warm-start, curriculum |
 | `problems.jl` | Piccolo `SmoothPulseProblem` builders + extractors |
-| `io.jl` | `save_isometry` / `load_isometry` |
+| `visualization.jl` | CairoMakie plotters (page curve, wedge, Petz sweep, code comparison) |
+| `io.jl` | `save_isometry` / `load_isometry`, `save_pulse` / `load_pulse` |
 | `reference_codes/five_qubit_code.jl` | The [[5,1,3]] + Knill–Laflamme verification |
 | `reference_codes/repetition_code.jl` | 3-qubit classical repetition encoder |
 | `reference_codes/happy_pentagon.jl` | Single-tile alias + multi-tile stub |
+| `reference_codes/four_one_two_code.jl` | The [[4,1,2]] code + stabilizers |
+| `reference_codes/steane_code.jl` | The [[7,1,3]] Steane code + stabilizers |
 
 ### Numbered examples (`examples/`)
 
@@ -90,10 +97,17 @@ Expect ~4 hours wall on a laptop. The script prints rolled-out fidelity
 | `05b_petz_optimization_demo.jl` | M5 L2 | Standalone V optimization on n=3 (obj 0.067, beats baselines 2.47×) |
 | `05c_petz_optimization_n5.jl` | M5 L2 | n=5 — discovers the **low-Petz manifold** structure |
 | `05d_m3_vs_m5_link.jl` | M5 L2 | Fixed-target QOC vs discovery-objective QOC on the same system |
+| `05e_piccolo_m5_n3.jl` | M5 L3 | Monolithic Petz-objective-in-Piccolo at n=3 (tractable) |
+| `05f_piccolo_m5_n5.jl` | M5 L3 | Monolithic at n=5 — documents the exact-Hessian wall (> 6 h/eval) |
+| `06_page_curve_demo.jl` | M5 | Page curves and black-hole diagnostics across reference codes |
+| `07_decomposed_m5_n5.jl` | **M5 L3 working** | **Decomposed M5: Stage-A discovery of V\* (~3 min) + optional Stage-B realization** |
+| `08_visualization_demo.jl` | M5 | CairoMakie figure layer |
+| `09_multistart_demo.jl` | M5 | Multistart synthesis pattern |
+| `10_holographic_dashboard.jl` | M5 | RT weights, bulk–boundary MI, code-quality dashboard |
 
 ### Tests (`test/`)
 
-398 passing tests, ~62 s wall (one small Piccolo synthesis at the end).
+3170 passing tests, ~18 min wall (includes one small Piccolo synthesis).
 Run with `julia --project=. -e 'using Pkg; Pkg.test()'`.
 
 ### Documentation
@@ -112,7 +126,25 @@ Run with `julia --project=. -e 'using Pkg; Pkg.test()'`.
 | M2 — Petz recovery | DONE | AME(5,2) erasure thresholds confirmed |
 | M3 — 3Q repetition via Piccolo | DONE | NLP & rollout both at fid 0.9999 |
 | M4 — [[5,1,3]] via Piccolo | DONE (XY drift variant) | Rollout fid 0.999, Petz Δ < 2e-4 |
-| M5 — Petz objective optimization | Layers 1+2 done, Layer 3 designed | See `docs/M5_DESIGN.md` |
+| M5 — Petz objective optimization | DONE via decomposition | Stage A discovers V\*; see below |
+
+### M5 result — the discovered code V\*
+
+Stage-A discovery on the single-erasure objective at n=5, n_bulk=1
+(`examples/07_decomposed_m5_n5.jl`, seed 20260527) converges to an isometry
+V\* that lies outside the stabilizer formalism:
+
+| Quantity | [[5,1,3]] | V\* |
+|----------|-----------|-----|
+| Petz w=1 (single erasure) | ~1e-16 | 6.76e-10 |
+| Petz w=2 (mean) | 0.0 | 0.184 |
+| Page plateau S(\|R\|=2) | 2.000 (AME) | 1.7178 |
+| Wedge threshold k\* | 3 | 4 |
+| Reconstructable counts \|A\|=1..5 | [0,0,10,5,1] | [0,0,0,5,1] |
+| Largest nontrivial Pauli expectation | 1.0 (16 of them) | 0.357 (`XZZYY`) |
+
+A 15-seed sweep (seeds 1–15) lands in the same basin every time: k\* = 4 in
+15/15, S(\|R\|=2) median 1.748 over [1.688, 1.827], Petz w=1 median 8.1e-10.
 
 ---
 
@@ -143,14 +175,43 @@ serve different M-levels:
 Direct (declared in `Project.toml`):
 
 - `Piccolo` 1.16.0 (pinned for reproducibility)
+- `CairoMakie`, `ForwardDiff`
 - `LinearAlgebra`, `Random`, `Serialization` (stdlib)
 
 Test-only:
 
 - `Test` (stdlib)
 
-The `Manifest.toml` is committed; `Pkg.instantiate()` reproduces the
-exact dependency graph used to produce all results here.
+The `Manifest.toml` is committed; `Pkg.instantiate()` reproduces the exact
+dependency graph used for everything in this repository.
+
+### Cubic-spline synthesis requires Piccolissimo
+
+`isometry_synthesis_problem_cubic` (the `CubicSplinePulse` / `SplinePulseProblem`
+path) **must not be run against Piccolo alone.** Piccolo's default
+`BilinearIntegrator` samples only the `:u` knot values, while `CubicSplinePulse`
+also carries `:du` Hermite tangents as independent NLP variables that never
+enter the dynamics constraint. The optimizer is then free to set `:du`
+arbitrarily, and the NLP's reported fidelity diverges from the true rollout:
+
+```
+Phase 1 NLP fidelity = 1.000001
+Phase 2 NLP fidelity = 1.000000
+Rollout fidelity     = 0.776678     <- the real number
+```
+
+(reproduce with `examples/04e_cubic_splines_m3_sanity.jl`, which is included
+precisely to document this failure and exits with a FAIL banner.)
+
+The correct integrator is `SplineIntegrator` from
+[Piccolissimo.jl](https://github.com/harmoniqs/Piccolissimo.jl), which is **not**
+a dependency of this package. Cubic-spline Stage-B results were produced in a
+separate environment declaring both `HolographicControl` and `Piccolissimo`.
+Anyone reproducing that work needs Piccolissimo access; without it, use the
+bilinear `isometry_synthesis_problem` path instead.
+
+Whichever path you take, report `rolled_out_isometry(qcp)` — the true dynamics —
+rather than `synthesized_isometry(qcp)`, which is the NLP's own estimate.
 
 ---
 
