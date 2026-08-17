@@ -182,8 +182,16 @@ Test-only:
 
 - `Test` (stdlib)
 
-The `Manifest.toml` is committed; `Pkg.instantiate()` reproduces the exact
-dependency graph used for everything in this repository.
+A pinned manifest is committed as `Manifest-v1.12.toml`. On Julia 1.12,
+`Pkg.instantiate()` reproduces the exact dependency graph used for every
+result in this repository. On other Julia versions the file is ignored and
+the environment resolves fresh from `Project.toml`, which is what the CI
+matrix does on the 1.10 LTS leg.
+
+Version-suffixed manifests are a Julia 1.11+ feature: `Pkg` prefers
+`Manifest-v{major}.{minor}.toml` over a plain `Manifest.toml` when the
+version matches. A single unsuffixed `Manifest.toml` cannot be shared
+across Julia minor versions, because stdlib versions differ between them.
 
 ### Cubic-spline synthesis requires Piccolissimo
 
